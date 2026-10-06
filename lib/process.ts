@@ -7,9 +7,21 @@ import {
   Processor
 } from "@huggingface/transformers";
 
+// Every asset the app needs is served from this origin: the models live under
+// `public/models/` (transformers.js appends `{repo}/{file}` to `localModelPath`)
+// and the JSEP bundle is the copy that ships with the bundled onnxruntime-web, so
+// it always matches the JS glue. `allowRemoteModels = false` makes any missing
+// file a hard failure instead of a silent third-party fetch.
+import ortJsepWasm from "../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm?url";
+
 // Initialize different model configurations
-const WEBGPU_MODEL_ID = "Xenova/modnet";
-const FALLBACK_MODEL_ID = "briaai/RMBG-1.4";
+export const WEBGPU_MODEL_ID = "Xenova/modnet";
+export const FALLBACK_MODEL_ID = "briaai/RMBG-1.4";
+
+env.allowLocalModels = true;
+env.allowRemoteModels = false;
+env.localModelPath = "/models/";
+env.backends.onnx.wasm.wasmPaths = { wasm: ortJsepWasm };
 
 interface ModelState {
   model: PreTrainedModel | null;
@@ -60,14 +72,12 @@ async function initializeWebGPU() {
       return false;
     }
 
-    // Configure environment for WebGPU
-    env.allowLocalModels = false;
+    // Configure environment for WebGPU. `proxy` must already be false here: this
+    // ORT build has no way to reset the WASM backend, so a session created while
+    // proxying was enabled permanently blocks the WebGPU path (see switchModel).
     if (env.backends?.onnx?.wasm) {
       env.backends.onnx.wasm.proxy = false;
     }
-
-    // Wait for WebAssembly initialization
-    await new Promise(resolve => setTimeout(resolve, 100));
 
     // Initialize model with WebGPU
     state.model = await AutoModel.from_pretrained(WEBGPU_MODEL_ID, {
@@ -87,12 +97,11 @@ async function initializeWebGPU() {
 }
 
 // Initialize the model based on the selected model ID
-export async function initializeModel(forceModelId?: string): Promise<boolean> {
+export async function initializeModel(forceModelId?: ModelId): Promise<boolean> {
   try {
     // Always use RMBG-1.4 for iOS
     if (state.isIOS) {
       console.log('iOS detected, using RMBG-1.4 model');
-      env.allowLocalModels = false;
       if (env.backends?.onnx?.wasm) {
         env.backends.onnx.wasm.proxy = true;
       }
@@ -134,14 +143,15 @@ export async function initializeModel(forceModelId?: string): Promise<boolean> {
     }
     
     // Use fallback model
-    env.allowLocalModels = false;
     if (env.backends?.onnx?.wasm) {
       env.backends.onnx.wasm.proxy = true;
     }
     
     state.model = await AutoModel.from_pretrained(FALLBACK_MODEL_ID, {
-      progress_callback: (progress) => {
-        console.log(`Loading model: ${Math.round(progress * 100)}%`);
+      progress_callback: (progress: any) => {
+        if (progress?.status === "progress" && progress.file?.name && progress.total) {
+          console.log(`Downloading ${progress.file.name}: ${Math.round((progress.loaded / progress.total) * 100)}%`);
+        }
       }
     });
     
@@ -167,7 +177,6 @@ export async function initializeModel(forceModelId?: string): Promise<boolean> {
       throw new Error("Failed to initialize model or processor");
     }
     
-    state.currentModelId = selectedModelId;
     return true;
   } catch (error) {
     console.error("Error initializing model:", error);
@@ -186,6 +195,22 @@ export function getModelInfo(): ModelInfo {
     isWebGPUSupported: Boolean((navigator as any).gpu),
     isIOS: state.isIOS
   };
+}
+
+const MODEL_CHOICE_KEY = "bg-remove:model";
+
+export type ModelId = typeof WEBGPU_MODEL_ID | typeof FALLBACK_MODEL_ID;
+
+export function getStoredModelId(): ModelId {
+  return localStorage.getItem(MODEL_CHOICE_KEY) === WEBGPU_MODEL_ID ? WEBGPU_MODEL_ID : FALLBACK_MODEL_ID;
+}
+
+// onnxruntime-web cannot change `wasm.proxy` once a session exists, so the WASM and
+// WebGPU backends cannot coexist in one page. Reloading lets the requested model be
+// the first session created, which is the only order that initialises cleanly.
+export function switchModel(modelId: ModelId): void {
+  localStorage.setItem(MODEL_CHOICE_KEY, modelId);
+  window.location.reload();
 }
 
 export async function processImage(image: File): Promise<File> {

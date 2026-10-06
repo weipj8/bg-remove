@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "pages:dev": "npm run build && wrangler pages dev dist",
+    "pages:deploy": "npm run build && rm -f dist/models/briaai/RMBG-1.4/onnx/model_quantized.onnx && wrangler pages deploy dist --branch main"
   },
   "dependencies": {
     "@huggingface/transformers": "3.0.0-alpha.15",

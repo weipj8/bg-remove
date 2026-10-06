@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import { Images } from "./components/Images";
-import { processImages, initializeModel, getModelInfo } from "../lib/process";
+import { processImages, initializeModel, getModelInfo, getStoredModelId, switchModel, WEBGPU_MODEL_ID, FALLBACK_MODEL_ID } from "../lib/process";
+import type { ModelId } from "../lib/process";
 
 interface AppError {
   message: string;
@@ -13,65 +14,31 @@ export interface ImageFile {
   processedFile?: File;
 }
 
-// Sample images from Unsplash
+// Bundled with the site so nothing is fetched from a third party at runtime.
 const sampleImages = [
-  "https://images.unsplash.com/photo-1601233749202-95d04d5b3c00?q=80&w=2938&auto=format&fit=crop&ixlib=rb-4.0.3",
-  "https://images.unsplash.com/photo-1513013156887-d2bf241c8c82?q=80&w=2970&auto=format&fit=crop&ixlib=rb-4.0.3",
-  "https://images.unsplash.com/photo-1643490745745-e8ca9a3a1c90?q=80&w=2874&auto=format&fit=crop&ixlib=rb-4.0.3",
-  "https://images.unsplash.com/photo-1574158622682-e40e69881006?q=80&w=2333&auto=format&fit=crop&ixlib=rb-4.0.3"
+  "/samples/sample-1.jpg",
+  "/samples/sample-2.jpg",
+  "/samples/sample-3.jpg",
+  "/samples/sample-4.jpg"
 ];
-
-// Check if the user is on mobile Safari
-const isMobileSafari = () => {
-  const ua = window.navigator.userAgent;
-  const iOS = !!ua.match(/iPad/i) || !!ua.match(/iPhone/i);
-  const webkit = !!ua.match(/WebKit/i);
-  const iOSSafari = iOS && webkit && !ua.match(/CriOS/i) && !ua.match(/OPiOS/i) && !ua.match(/FxiOS/i);
-  return iOSSafari && 'ontouchend' in document;
-};
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<AppError | null>(null);
-  const [isWebGPU, setIsWebGPU] = useState(false);
+  const [isWebGPU] = useState(() => getModelInfo().isWebGPUSupported);
   const [isIOS, setIsIOS] = useState(false);
-  const [currentModel, setCurrentModel] = useState<'briaai/RMBG-1.4' | 'Xenova/modnet'>('briaai/RMBG-1.4');
-  const [isModelSwitching, setIsModelSwitching] = useState(false);
+  const [currentModel] = useState<ModelId>(getStoredModelId);
   const [images, setImages] = useState<ImageFile[]>([]);
 
   useEffect(() => {
-    if (isMobileSafari()) {
-      window.location.href = 'https://bg-mobile.addy.ie';
-      return;
-    }
-
     // Only check iOS on load since that won't change
     const { isIOS: isIOSDevice } = getModelInfo();
     setIsIOS(isIOSDevice);
     setIsLoading(false);
   }, []);
 
-  const handleModelChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const newModel = event.target.value as typeof currentModel;
-    setIsModelSwitching(true);
-    setError(null);
-    try {
-      const initialized = await initializeModel(newModel);
-      if (!initialized) {
-        throw new Error("Failed to initialize new model");
-      }
-      setCurrentModel(newModel);
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("Falling back")) {
-        setCurrentModel('briaai/RMBG-1.4');
-      } else {
-        setError({
-          message: err instanceof Error ? err.message : "Failed to switch models"
-        });
-      }
-    } finally {
-      setIsModelSwitching(false);
-    }
+  const handleModelChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    switchModel(event.target.value as ModelId);
   };
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
@@ -87,13 +54,10 @@ export default function App() {
       setIsLoading(true);
       setError(null);
       try {
-        const initialized = await initializeModel();
+        const initialized = await initializeModel(currentModel);
         if (!initialized) {
           throw new Error("Failed to initialize background removal model");
         }
-        // Update WebGPU support status after model initialization
-        const { isWebGPUSupported } = getModelInfo();
-        setIsWebGPU(isWebGPUSupported);
       } catch (err) {
         setError({
           message: err instanceof Error ? err.message : "An unknown error occurred"
@@ -119,7 +83,7 @@ export default function App() {
         console.error('Error processing image:', error);
       }
     }
-  }, [images.length]);
+  }, [images.length, currentModel]);
 
 
   const handlePaste = async (event: React.ClipboardEvent) => {
@@ -181,9 +145,9 @@ export default function App() {
                   className="bg-white border border-gray-300 rounded-md px-3 py-1 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   disabled={!isWebGPU}
                 >
-                  <option value="briaai/RMBG-1.4">RMBG-1.4 (Cross-browser)</option>
+                  <option value={FALLBACK_MODEL_ID}>RMBG-1.4 (Cross-browser)</option>
                   {isWebGPU && (
-                    <option value="Xenova/modnet">MODNet (WebGPU)</option>
+                    <option value={WEBGPU_MODEL_ID}>MODNet (WebGPU)</option>
                   )}
                 </select>
               </div>
@@ -228,16 +192,16 @@ export default function App() {
                 ${isDragAccept ? "border-green-500 bg-green-50" : ""}
                 ${isDragReject ? "border-red-500 bg-red-50" : ""}
                 ${isDragActive ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:border-blue-500 hover:bg-blue-50"}
-                ${isLoading || isModelSwitching ? "cursor-not-allowed" : ""}
+                ${isLoading ? "cursor-not-allowed" : ""}
               `}
             >
-              <input {...getInputProps()} className="hidden" disabled={isLoading || isModelSwitching} />
+              <input {...getInputProps()} className="hidden" disabled={isLoading} />
               <div className="flex flex-col items-center gap-2">
-                {isLoading || isModelSwitching ? (
+                {isLoading ? (
                   <>
                     <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600 mb-2"></div>
                     <p className="text-lg text-gray-600">
-                      {isModelSwitching ? 'Switching models...' : 'Loading background removal model...'}
+                      Loading background removal model...
                     </p>
                   </>
                 ) : error ? (
@@ -246,11 +210,11 @@ export default function App() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                     </svg>
                     <p className="text-lg text-red-600 font-medium mb-2">{error.message}</p>
-                    {currentModel === 'Xenova/modnet' && (
+                    {currentModel === WEBGPU_MODEL_ID && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleModelChange({ target: { value: 'briaai/RMBG-1.4' }} as any);
+                          switchModel(FALLBACK_MODEL_ID);
                         }}
                         className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
                       >
