@@ -172,8 +172,17 @@ List a repo's files and sizes with
 - **Functions requests:** billed as Workers requests, 100,000/day free. This is why the
   function is mounted at `/models/briaai/RMBG-1.4/onnx/*` rather than `/models/*` — a
   broad mount would bill every model file of every visitor.
+- **Workers Free also allows only 10 ms of CPU per invocation.** The proxy stays inside
+  that because `new Response(object.body)` *streams* — the edge never holds the 42 MB. Do
+  not "simplify" it to `await object.arrayBuffer()` or any other buffering form; that
+  converts a free passthrough into a CPU and memory bill, and will fail outright on the
+  free plan.
 - Each visitor downloads a model **once**; Transformers.js persists it in the browser
   Cache API and the response is `max-age=31536000, immutable`.
+
+For comparison, the same 420 GB of monthly egress on a typical VPS billed at
+$0.05–0.12/GB would run $20–50/month. R2's free egress is what makes the free plan viable
+here.
 
 ## Known limitations
 
