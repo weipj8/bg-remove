@@ -41,7 +41,7 @@ Both implementations use Transformers.js to run the machine learning models dire
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/addyosmani/bg-remove.git
+git clone https://github.com/weipj8/bg-remove.git
 ```
 
 2. Install dependencies:
@@ -54,10 +54,32 @@ npm install
 npm run dev
 ```
 
+## Deployment
+
+The site is **self-contained**: every model weight, the ONNX WASM runtime and the sample
+images are served from the site's own origin, so a visitor's browser never contacts a
+third party. Nothing is inferred or uploaded server-side — Cloudflare only delivers files.
+
+Live at **https://bg-remove-1cl.pages.dev**, deployed with:
+
+```bash
+npm run pages:deploy
+```
+
+Requires `npx wrangler login` first, plus the one-time R2 bucket and Pages project
+described in [AGENTS.md](./AGENTS.md). That file also covers the two constraints worth
+knowing before you change anything: Cloudflare's **25 MiB per-static-file cap** (which is
+why RMBG-1.4's 42 MiB weight is streamed from R2 by a Pages Function rather than shipped
+as an asset), and the **COOP/COEP headers** that make the page `crossOriginIsolated` —
+they buy multithreaded WASM, but they also mean any cross-origin asset you add will simply
+be blocked.
+
 ## Browser Support
 
 - **Default Experience**: All modern browsers (Chrome, Firefox, Safari, Edge)
-- **Optional WebGPU**: Available in browsers with WebGPU support (Chrome Canary with WebGPU flags enabled)
+- **Optional WebGPU**: Chrome/Edge 113+ and other browsers with WebGPU enabled. iOS Safari
+  has no WebGPU and a tight per-tab WASM memory ceiling, so it stays on the WASM path and
+  may struggle with the 42 MiB model.
 
 ## Technical Stack
 
