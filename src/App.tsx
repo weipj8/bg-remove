@@ -1,271 +1,181 @@
-import React, { useState, useCallback, useEffect } from "react";
-import { useDropzone } from "react-dropzone";
-import { Images } from "./components/Images";
-import { processImages, initializeModel, getModelInfo, getStoredModelId, switchModel, WEBGPU_MODEL_ID, FALLBACK_MODEL_ID } from "../lib/process";
-import type { ModelId } from "../lib/process";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Dropzone } from "./components/Dropzone";
+import { ModelPicker } from "./components/ModelPicker";
+import { Results } from "./components/Results";
+import { StatusPanel } from "./components/StatusPanel";
+import { BeforeAfter, Faq, HowItWorks, Privacy, SiteFooter } from "./components/Sections";
+import { TopBar } from "./components/TopBar";
+import { Chip, IconCheck } from "./components/ui";
+import { usePipeline } from "./hooks/usePipeline";
 
-interface AppError {
-  message: string;
-}
+const SAMPLES = [
+  { url: "/samples/sample-1.jpg", name: "sample-1.jpg" },
+  { url: "/samples/sample-2.jpg", name: "sample-2.jpg" },
+  { url: "/samples/sample-3.jpg", name: "sample-3.jpg" },
+  { url: "/samples/sample-4.jpg", name: "sample-4.jpg" }
+];
 
-export interface ImageFile {
-  id: number;
-  file: File;
-  processedFile?: File;
-}
-
-// Bundled with the site so nothing is fetched from a third party at runtime.
-const sampleImages = [
-  "/samples/sample-1.jpg",
-  "/samples/sample-2.jpg",
-  "/samples/sample-3.jpg",
-  "/samples/sample-4.jpg"
+const COMPARISONS = [
+  { before: "/samples/sample-1.jpg", after: "/samples/sample-1-cut.png", label: "portrait" },
+  { before: "/samples/sample-3.jpg", after: "/samples/sample-3-cut.png", label: "product" },
+  { before: "/samples/sample-4.jpg", after: "/samples/sample-4-cut.png", label: "street" }
 ];
 
 export default function App() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<AppError | null>(null);
-  const [isWebGPU] = useState(() => getModelInfo().isWebGPUSupported);
-  const [isIOS, setIsIOS] = useState(false);
-  const [currentModel] = useState<ModelId>(getStoredModelId);
-  const [images, setImages] = useState<ImageFile[]>([]);
+  const pipeline = usePipeline();
+  const [loadingSample, setLoadingSample] = useState<string | null>(null);
+  const [sampleError, setSampleError] = useState<string | null>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+
+  const addFiles = pipeline.addFiles;
+
+  // Pasting a screenshot is the fastest route in, and it is the one people try first.
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const files = Array.from(event.clipboardData?.items ?? [])
+        .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => file !== null);
+      if (files.length === 0) return;
+      event.preventDefault();
+      addFiles(files);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [addFiles]);
 
   useEffect(() => {
-    // Only check iOS on load since that won't change
-    const { isIOS: isIOSDevice } = getModelInfo();
-    setIsIOS(isIOSDevice);
-    setIsLoading(false);
-  }, []);
+    if (pipeline.items.length > 0) resultsRef.current?.scrollIntoView({ block: "nearest" });
+  }, [pipeline.items.length]);
 
-  const handleModelChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    switchModel(event.target.value as ModelId);
-  };
-
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    const newImages = acceptedFiles.map((file, index) => ({
-      id: Date.now() + index,
-      file,
-      processedFile: undefined
-    }));
-    setImages(prev => [...prev, ...newImages]);
-    
-    // Initialize model if this is the first image
-    if (images.length === 0) {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const initialized = await initializeModel(currentModel);
-        if (!initialized) {
-          throw new Error("Failed to initialize background removal model");
-        }
-      } catch (err) {
-        setError({
-          message: err instanceof Error ? err.message : "An unknown error occurred"
-        });
-        setImages([]); // Clear the newly added images if model fails to load
-        setIsLoading(false);
-        return;
-      }
-      setIsLoading(false);
-    }
-    
-    for (const image of newImages) {
-      try {
-        const result = await processImages([image.file]);
-        if (result && result.length > 0) {
-          setImages(prev => prev.map(img =>
-            img.id === image.id
-              ? { ...img, processedFile: result[0] }
-              : img
-          ));
-        }
-      } catch (error) {
-        console.error('Error processing image:', error);
-      }
-    }
-  }, [images.length, currentModel]);
-
-
-  const handlePaste = async (event: React.ClipboardEvent) => {
-    const clipboardItems = event.clipboardData.items;
-    const imageFiles: File[] = [];
-    for (const item of clipboardItems) {
-      if (item.type.startsWith("image")) {
-        const file = item.getAsFile();
-        if (file) {
-          imageFiles.push(file);
-        }
-      }
-    }
-    if (imageFiles.length > 0) {
-      onDrop(imageFiles);
-    }
-  };  
-
-  const handleSampleImageClick = async (url: string) => {
+  const loadSample = useCallback(async (url: string, name: string) => {
+    setLoadingSample(url);
+    setSampleError(null);
     try {
       const response = await fetch(url);
+      if (!response.ok) throw new Error(response.statusText);
       const blob = await response.blob();
-      const file = new File([blob], 'sample-image.jpg', { type: 'image/jpeg' });
-      onDrop([file]);
-    } catch (error) {
-      console.error('Error loading sample image:', error);
+      addFiles([new File([blob], name, { type: blob.type || "image/jpeg" })]);
+    } catch {
+      setSampleError("That sample could not be loaded.");
+    } finally {
+      setLoadingSample(null);
     }
-  };
-
-  const {
-    getRootProps,
-    getInputProps,
-    isDragActive,
-    isDragAccept,
-    isDragReject,
-  } = useDropzone({
-    onDrop,
-    accept: {
-      "image/*": [".jpeg", ".jpg", ".png", ".mp4"],
-    },
-  });
-
-  // Remove the full screen error and loading states
+  }, [addFiles]);
 
   return (
-    <div className="min-h-screen bg-gray-50" onPaste={handlePaste}>
-      <nav className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-gray-800">
-              BG
-            </h1>
-            {!isIOS && (
-              <div className="flex items-center gap-4">
-                <span className="text-gray-600">Model:</span>
-                <select
-                  value={currentModel}
-                  onChange={handleModelChange}
-                  className="bg-white border border-gray-300 rounded-md px-3 py-1 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  disabled={!isWebGPU}
-                >
-                  <option value={FALLBACK_MODEL_ID}>RMBG-1.4 (Cross-browser)</option>
-                  {isWebGPU && (
-                    <option value={WEBGPU_MODEL_ID}>MODNet (WebGPU)</option>
-                  )}
-                </select>
-              </div>
-            )}
-          </div>
-          {isIOS && (
-            <p className="text-sm text-gray-500 mt-2">
-              Using optimized iOS background removal
-            </p>
-          )}
-        </div>
-      </nav>
+    <div id="top" className="min-h-screen pb-4">
+      <TopBar />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className={`grid ${images.length === 0 ? 'grid-cols-2 gap-8' : 'grid-cols-1'}`}>
-          {images.length === 0 && (
-            <div className="flex flex-col justify-center items-start">
-              <img 
-                src="hero.png"
-                alt="Surprised man"
-                className="mb-6 w-full object-cover h-[400px]"
-              />
-              <h2 className="text-3xl font-bold text-gray-800 mb-4">
-                Remove Image Background
-              </h2>
-              <p className="text-lg text-gray-600 mb-4">
-                100% Automatically and Free
-              </p>
-              <p className="text-gray-500">
-                Upload your image and let our AI remove the background instantly. Perfect for professional photos, product images, and more.
-              </p>
-              <p className="text-sm text-gray-300 mt-4">
-                Built with love by Addy Osmani using Transformers.js
-              </p>
-            </div>
-          )}
-          
-          <div className={images.length === 0 ? '' : 'w-full'}>
-            <div
-              {...getRootProps()}
-              className={`p-8 mb-8 border-2 border-dashed rounded-lg text-center cursor-pointer transition-colors duration-300 ease-in-out bg-white
-                ${isDragAccept ? "border-green-500 bg-green-50" : ""}
-                ${isDragReject ? "border-red-500 bg-red-50" : ""}
-                ${isDragActive ? "border-blue-500 bg-blue-50" : "border-gray-300 hover:border-blue-500 hover:bg-blue-50"}
-                ${isLoading ? "cursor-not-allowed" : ""}
-              `}
+      <main className="mx-auto max-w-page px-5 sm:px-8">
+        <section aria-labelledby="hero-heading" className="grid gap-10 py-14 lg:grid-cols-[1.05fr_1fr] lg:gap-14 lg:py-20">
+          <div className="flex flex-col justify-center">
+            <p className="label">In-browser background remover</p>
+            <h1
+              id="hero-heading"
+              className="rise mt-4 font-display text-4xl leading-[1.05] tracking-display text-paper sm:text-5xl lg:text-6xl"
             >
-              <input {...getInputProps()} className="hidden" disabled={isLoading} />
-              <div className="flex flex-col items-center gap-2">
-                {isLoading ? (
-                  <>
-                    <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600 mb-2"></div>
-                    <p className="text-lg text-gray-600">
-                      Loading background removal model...
-                    </p>
-                  </>
-                ) : error ? (
-                  <>
-                    <svg className="w-12 h-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                    <p className="text-lg text-red-600 font-medium mb-2">{error.message}</p>
-                    {currentModel === WEBGPU_MODEL_ID && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          switchModel(FALLBACK_MODEL_ID);
-                        }}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                      >
-                        Switch to Cross-browser Version
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                    <p className="text-lg text-gray-600">
-                      {isDragActive
-                        ? "Drop the images here..."
-                        : "Drag and drop images here"}
-                    </p>
-                    <p className="text-sm text-gray-500">or click to select files</p>
-                  </>
-                )}
-              </div>
+              Cut the background
+              <span className="block italic text-lime">without a server.</span>
+            </h1>
+            <p className="mt-6 max-w-prose text-lg leading-relaxed text-mute">
+              Drop a photo and your own GPU does the work. Nothing is uploaded, there is no account,
+              and once the model is cached it runs with the network off.
+            </p>
+
+            <ul className="mt-8 flex flex-wrap gap-2">
+              {["No upload", "No account", "No watermark", "Free forever"].map((fact) => (
+                <li key={fact}>
+                  <Chip tone="good">
+                    <IconCheck className="h-3.5 w-3.5" />
+                    {fact}
+                  </Chip>
+                </li>
+              ))}
+            </ul>
+
+            <dl className="readout mt-10 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-line pt-6 text-xs sm:grid-cols-4">
+              {[
+                { k: "runs on", v: "your GPU / CPU" },
+                { k: "models", v: "RMBG-1.4 · MODNet" },
+                { k: "setup, once", v: "25–42 MB" },
+                { k: "price", v: "$0 · no account" }
+              ].map((spec) => (
+                <div key={spec.k}>
+                  <dt className="text-mute/70">{spec.k}</dt>
+                  <dd className="mt-1 text-paper">{spec.v}</dd>
+                </div>
+              ))}
+            </dl>
+
+            <p className="readout mt-8 max-w-prose text-xs leading-relaxed text-mute">
+              {pipeline.capabilities.isWebGPUSupported
+                ? "This browser reports WebGPU, so MODNet is available as well as RMBG."
+                : "This browser has no WebGPU, so MODNet is disabled and RMBG runs on the CPU."}
+            </p>
+          </div>
+
+          <div className="rounded-lg bg-ink-800/70 p-5 shadow-card ring-1 ring-line sm:p-6">
+            <ModelPicker pipeline={pipeline} />
+
+            <div className="mt-5">
+              <Dropzone onFiles={addFiles} busy={pipeline.busy} />
             </div>
 
-            {images.length === 0 && (
-              <div className="bg-white rounded-lg p-6 shadow-sm">
-                <h3 className="text-xl text-gray-700 font-semibold mb-4">No image? Try one of these:</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {sampleImages.map((url, index) => (
-                    <button
-                      key={index}
-                      onClick={() => handleSampleImageClick(url)}
-                      className="relative aspect-square overflow-hidden rounded-lg hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <img
-                        src={url}
-                        alt={`Sample ${index + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                    </button>
-                  ))}
-                </div>
-                <p className="text-sm text-gray-500 mt-4">
-                  All images are processed locally on your device and are not uploaded to any server.
-                </p>
-              </div>
-            )}
+            <div className="mt-5">
+              <StatusPanel pipeline={pipeline} />
+            </div>
 
-            <Images images={images} onDelete={(id) => setImages(prev => prev.filter(img => img.id !== id))} />
+            <div className="mt-6 border-t border-line pt-5">
+              <p className="label mb-3">No image handy? Try one</p>
+              <div className="grid grid-cols-4 gap-2">
+                {SAMPLES.map((sample) => (
+                  <button
+                    key={sample.url}
+                    type="button"
+                    onClick={() => loadSample(sample.url, sample.name)}
+                    disabled={loadingSample !== null}
+                    aria-label={`Process ${sample.name}`}
+                    className="group relative overflow-hidden rounded-md ring-1 ring-line transition-shadow hover:ring-2 hover:ring-lime disabled:opacity-50"
+                  >
+                    <img
+                      src={sample.url}
+                      alt=""
+                      className="thumb-img aspect-square"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    {loadingSample === sample.url && (
+                      <span className="absolute inset-0 flex items-center justify-center bg-ink-950/70">
+                        <span className="h-4 w-4 animate-spin rounded-full border-t border-lime" />
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              {sampleError && <p className="readout mt-2 text-xs text-amber">{sampleError}</p>}
+            </div>
           </div>
+        </section>
+
+        <div ref={resultsRef}>
+          <Results
+            items={pipeline.items}
+            onRemove={pipeline.removeItem}
+            onRetry={pipeline.retry}
+            onClear={pipeline.clear}
+          />
         </div>
+
+        <BeforeAfter slides={COMPARISONS} />
+        <HowItWorks />
+        <Privacy />
+        <Faq />
       </main>
+
+      <div className="mx-auto max-w-page px-5 sm:px-8">
+        <SiteFooter />
+      </div>
     </div>
   );
 }

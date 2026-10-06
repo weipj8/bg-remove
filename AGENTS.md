@@ -9,6 +9,30 @@ via [Transformers.js](https://github.com/huggingface/transformers.js). There is 
 application server: inference never touches Cloudflare, and no user image is uploaded
 anywhere. `npm run build` produces a pure static `dist/`.
 
+## Build pipeline
+
+```bash
+npm run fonts      # scripts/vendor-fonts.mjs -> public/fonts/*.woff2 + src/fonts.css
+npm run manifest   # scripts/gen-model-manifest.mjs -> src/generated/model-manifest.json
+npm run build      # vite build, then scripts/prerender.mjs fills dist/index.html
+npm run typecheck  # tsc --noEmit; esbuild alone would type-check nothing
+```
+
+- **The manifest is the progress denominator.** `readResponse()` in
+  `@huggingface/transformers/src/utils/hub.js:605-648` derives `total` from
+  `Content-Length`; the R2 stream has no such header, so the library grows its buffer per
+  chunk and reports `total === loaded` — i.e. 100% on the first chunk. Only `loaded` is
+  trustworthy, so `MODEL_SPECS[id].bytes` comes from `fs.statSync` over the committed
+  weights at build time. `src/generated/model-manifest.json` is derived and gitignored.
+- **Prerender, not hydration.** `scripts/prerender.mjs` renders `src/ssr.jsx` through a
+  throwaway Vite SSR server and writes the markup into `dist/index.html`'s `#root`, so
+  crawlers and link previews get real prose. It is `renderToStaticMarkup`, and
+  `src/main.jsx` re-renders with `createRoot`. Do not convert this to `hydrateRoot`:
+  nearly every fact on the page (WebGPU support, cache state, `crossOriginIsolated`) only
+  exists in the browser, so hydration would mismatch on almost every visit.
+- Anything rendered by the page must be SSR-safe: no `window`, `navigator` or `caches`
+  during render — read them inside an effect or guard with `typeof`.
+
 ## The invariant: zero third-party runtime dependencies
 
 Every byte the app needs at runtime is served from the site's own origin. This is a
@@ -25,6 +49,12 @@ Do not reintroduce it. Concretely:
 - `functions/_middleware.js` sends `Cross-Origin-Embedder-Policy: require-corp` site-wide.
   Any cross-origin image/script you add will be **blocked by the browser**, so adding one
   is a build-visible mistake, not a quiet degradation.
+- **Fonts are files in `public/fonts/`, not a `<link>`.** They are vendored out of the
+  `@fontsource/*` devDependencies by `scripts/vendor-fonts.mjs` (`npm run fonts`), which
+  copies the latin woff2 faces under stable names, keeps each OFL licence next to its
+  family, and regenerates `src/fonts.css` from them. `src/index.css` imports that file, and
+  `tailwind.config.js` `fontFamily` must name the same families. Runtime CSS that points at
+  any other origin is the same third-party dependency as a Google Fonts `<link>`.
 
 ## Assets and where they live
 
@@ -42,6 +72,16 @@ The JSEP WASM bundle is imported from `node_modules` with Vite's `?url` suffix i
 carries the WebGPU and WebNN execution providers — if it fails to load, WebGPU dies with
 `WebAssembly is not initialized yet`. Importing from `node_modules` keeps the binary in
 lockstep with the bundled JS glue.
+
+### The 404 page is hand-written HTML, not React
+
+`public/404.html` is standalone: no bundle, no `#root`, inline CSS, and fonts pulled from
+`/fonts/` like everything else. It exists so an unknown path answers `404` instead of the
+SPA fallback (`index.html` with `200`), which reads to a crawler as a soft 404. Keep it that
+way — a second `<script type="module">` entry would drag transformers.js into a page whose
+only job is an apology. Note that Pages only serves it if the project's not-found behaviour
+is not forced to SPA, so re-check `curl -I` on the deployed origin after changing anything
+here.
 
 ### Why R2 exists
 
@@ -66,6 +106,28 @@ dtype (`src/utils/dtypes.js`): `wasm → q8` (suffix `_quantized`), `webgpu → 
 
 Passing `{ dtype: "..." }` to `AutoModel.from_pretrained` overrides this and changes which
 filename is requested — if you do, vendor the corresponding file.
+
+## Model switching, and the queue handoff
+
+`wasm.proxy` is fixed by the first ORT session a page creates, so the WASM (RMBG) and
+WebGPU (MODNet) backends cannot coexist in one page: switching models has to reload.
+`lib/handoff.ts` makes that reload non-destructive. Before `switchModel()` reloads, the queue
+— the dropped `File`s **and** any finished cut-outs — is written to IndexedDB; the first
+render after the reload takes it back out, marks every item `queued` and re-cuts it with the
+new model. The re-run is deliberate: switching models is how you ask for a second opinion,
+and the previous result stays under the "waiting" chip until the new one replaces it.
+
+- **Do not move this to `sessionStorage`.** It stringifies, and a `File` serialises to `{}`.
+  IndexedDB structured-clones `File`/`Blob` with their `name`/`type` intact, which is the
+  whole trick.
+- `takeHandoff()` reads and deletes in a single transaction, so a handoff can never be
+  applied twice, and a record older than 10 minutes is dropped rather than resurrecting a
+  session the visitor abandoned.
+- If IndexedDB is unavailable (private mode, quota), `switchTo()` returns `"blocked"` and the
+  UI **refuses to reload** instead of destroying the images. Do not "simplify" that to
+  fire-and-forget.
+- `usePipeline` reads the stored model in a `useState` initialiser, not an effect, because the
+  handoff restore can start inference immediately and must not capture the wrong model id.
 
 ## Local development
 
@@ -134,8 +196,9 @@ integration builds, the build command must strip that file first.
 The property worth checking is that nothing left the origin. Load the site in a real
 browser, drop an image, wait for the processed result, and assert zero requests to any
 other host — for **both** models (the choice persists in `localStorage` under
-`bg-remove:model`, and switching models reloads the page because `wasm.proxy` cannot be
-flipped once a session exists).
+`bg-remove:model`; switching models reloads the page because `wasm.proxy` cannot be
+flipped once a session exists, and `lib/handoff.ts` carries the queue across that reload —
+see below).
 
 ```bash
 BASE=https://bg-remove-1cl.pages.dev node /tmp/bgtest/selfcontained.mjs "briaai/RMBG-1.4"

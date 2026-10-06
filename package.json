@@ -4,8 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "manifest": "node scripts/gen-model-manifest.mjs",
+    "fonts": "node scripts/vendor-fonts.mjs",
+    "predev": "npm run manifest",
     "dev": "vite",
-    "build": "vite build",
+    "prebuild": "npm run manifest",
+    "build": "vite build && node scripts/prerender.mjs",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "preview": "vite preview",
     "pages:dev": "npm run build && wrangler pages dev dist",
@@ -13,18 +18,15 @@
   },
   "dependencies": {
     "@huggingface/transformers": "3.0.0-alpha.15",
-    "dexie": "^4.0.8",
-    "dexie-react-hooks": "^1.1.7",
-    "file-saver": "^2.0.5",
-    "jszip": "^3.10.1",
-    "mp4-muxer": "^5.1.1",
     "onnxruntime-web": "^1.20.0-dev.20240908-de7a02beef",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-dropzone": "^14.2.3"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.10.0",
+    "@fontsource/instrument-serif": "^5.3.0",
+    "@fontsource/spline-sans": "^5.3.0",
+    "@fontsource/spline-sans-mono": "^5.3.0",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
@@ -36,6 +38,7 @@
     "globals": "^15.9.0",
     "postcss": "^8.4.45",
     "tailwindcss": "^3.4.10",
+    "typescript": "^5.9.3",
     "vite": "^5.4.3"
   }
 }

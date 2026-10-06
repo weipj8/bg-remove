@@ -3,24 +3,123 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Background Image Remover</title>
+    <title>Free Background Remover — 100% in Your Browser</title>
+    <meta
+      name="description"
+      content="Remove an image background free, without an account or an upload. The AI model runs entirely in your browser on WebGPU or WASM, so your photos never leave your device. Works offline after a one-time setup."
+    />
+    <meta name="author" content="Addy Osmani" />
+    <meta name="theme-color" content="#080A0C" />
+    <link rel="canonical" href="https://bg-remove-1cl.pages.dev/" />
 
-    <meta name="keywords" content="background image remover, remove background free, remove bg" />
-    <meta name="author" content="Addy Osmani and Transformers.js" />
-    <link rel="favicon" href="favicon.ico" />
-    <meta name="description" content="Remove image backgrounds automatically in seconds with just one click. Don't spend hours manually doing it yourself. " />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/favicon-512.png" />
+    <link rel="apple-touch-icon" href="/favicon-512.png" />
 
-    <!-- Open Graph / Facebook -->
+    <!-- The two faces that carry first paint; the rest arrive with the stylesheet. -->
+    <link rel="preload" href="/fonts/instrument-serif-400.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/spline-sans-400.woff2" as="font" type="font/woff2" crossorigin />
+
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Background Image Remover" />
-    <meta property="og:description" content="Remove image backgrounds automatically in seconds with just one click. Don't spend hours manually doing it yourself. " />
-    <meta property="og:image" content="/meta.jpg" />
+    <meta property="og:site_name" content="bg-remove" />
+    <meta property="og:url" content="https://bg-remove-1cl.pages.dev/" />
+    <meta property="og:title" content="Free Background Remover — 100% in Your Browser" />
+    <meta
+      property="og:description"
+      content="Background removal that runs on your own device. No upload, no account, no watermark. Free, and offline once the model is cached."
+    />
+    <meta property="og:image" content="https://bg-remove-1cl.pages.dev/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="A photo and its cut-out on a transparency checkerboard" />
 
-    <!-- Twitter -->
-    <meta property="twitter:card" content="summary_large_image" />
-    <meta property="twitter:title" content="Background Image Remover" />
-    <meta property="twitter:description" content="Remove image backgrounds automatically in seconds with just one click. Don't spend hours manually doing it yourself. " />
-    <meta property="twitter:image" content="/meta.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Free Background Remover — 100% in Your Browser" />
+    <meta
+      name="twitter:description"
+      content="Background removal that runs on your own device. No upload, no account, no watermark."
+    />
+    <meta name="twitter:image" content="https://bg-remove-1cl.pages.dev/og.png" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebApplication",
+            "@id": "https://bg-remove-1cl.pages.dev/#app",
+            "url": "https://bg-remove-1cl.pages.dev/",
+            "name": "bg-remove — in-browser background remover",
+            "description": "Free background removal that runs entirely in the visitor's browser with transformers.js. Images are not uploaded to a server.",
+            "applicationCategory": "MultimediaApplication",
+            "applicationSubCategory": "Background remover",
+            "operatingSystem": "Any (web browser)",
+            "browserRequirements": "Requires JavaScript. Requires a modern browser with WebGPU or WebAssembly.",
+            "softwareVersion": "1.0",
+            "license": "https://opensource.org/licenses/MIT",
+            "isAccessibleForFree": true,
+            "featureList": [
+              "Background removal",
+              "Transparent PNG export",
+              "Solid colour and image background compositing",
+              "Batch processing",
+              "Offline after first use"
+            ],
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            }
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://bg-remove-1cl.pages.dev/#faq",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Does my photo get uploaded to a server?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. The image stays in the tab and the model runs on your own GPU or CPU. Once the setup download finishes there is no network request for your photos at all — you can even switch on airplane mode and it keeps working."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Why is the first image slow?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "The first run downloads the neural network to your browser — about 25 MiB for MODNet or 42 MiB for RMBG. That happens once per browser, it is stored in the cache, and every visit after that starts processing immediately."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Which model should I pick?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "MODNet needs WebGPU, is smaller and is faster, and is the right choice for people. RMBG runs everywhere, is the better all-rounder for products, furniture and text, and is the default. You can switch at any time."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "What formats can I use?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "JPEG, PNG and WebP up to a few thousand pixels per side. You get a transparent PNG back, and the background editor can flatten it onto a solid colour or an image of your own."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Is it really free?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes, with no account, no watermark and no usage limit. There is no backend inference to pay for, which is why it can be. The code is open source."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

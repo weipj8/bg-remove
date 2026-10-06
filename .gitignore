@@ -13,6 +13,9 @@ dist-ssr
 .wrangler
 *.local
 
+# Derived from the committed model binaries at build time.
+src/generated/model-manifest.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

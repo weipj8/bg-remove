@@ -1,309 +1,336 @@
-import React, { useState, useEffect } from 'react';
-import type { ImageFile } from "../App";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { WorkItem } from "../hooks/usePipeline";
+import { IconClose, IconDownload } from "./ui";
 
 interface EditModalProps {
-  image: ImageFile;
-  isOpen: boolean;
+  item: WorkItem;
+  /** Object URL of the cut-out, owned by the card so it is created once. */
+  sourceUrl: string | null;
   onClose: () => void;
-  onSave: (url: string) => void;
+  onSave: (dataUrl: string) => void;
 }
 
-const backgroundOptions = [
-  { id: 'color', label: 'Solid Color' },
-  { id: 'image', label: 'Image' }
+const BACKGROUND_COLORS = [
+  "#FFFFFF",
+  "#0E1216",
+  "#EDEFF2",
+  "#C4F135",
+  "#FF6B5E",
+  "#2A343E",
+  "#7BE3D2",
+  "#FFC44D"
 ];
 
-const effectOptions = [
-  { id: 'none', label: 'None' },
-  { id: 'blur', label: 'Blur' },
-  { id: 'brightness', label: 'Bright' },
-  { id: 'contrast', label: 'Contrast' }
-];
+const EFFECTS = [
+  { id: "none", label: "None" },
+  { id: "blur", label: "Blur" },
+  { id: "brightness", label: "Bright" },
+  { id: "contrast", label: "Contrast" }
+] as const;
 
-const predefinedColors = [
-  '#ffffff', '#000000', '#ff0000', '#00ff00', '#0000ff',
-  '#ffff00', '#00ffff', '#ff00ff', '#808080', '#c0c0c0'
-];
+type EffectId = (typeof EFFECTS)[number]["id"];
 
-const predefinedPatterns = [
-  { id: 'dots', label: 'Dots' },
-  { id: 'lines', label: 'Lines' },
-  { id: 'grid', label: 'Grid' },
-  { id: 'waves', label: 'Waves' }
-];
-
-export function EditModal({ image, isOpen, onClose, onSave }: EditModalProps) {
-  const [bgType, setBgType] = useState('color');
-  const [bgColor, setBgColor] = useState('#ffffff');
-  const [customBgImage, setCustomBgImage] = useState<File | null>(null);
-  const [selectedEffect, setSelectedEffect] = useState('none');
-  const [blurValue, setBlurValue] = useState(50);
-  const [brightnessValue, setBrightnessValue] = useState(50);
-  const [contrastValue, setContrastValue] = useState(50);
-  const [exportUrl, setExportUrl] = useState('');
-  const [showCustomColorPicker, setShowCustomColorPicker] = useState(false);
-
-  const processedURL = image.processedFile ? URL.createObjectURL(image.processedFile) : '';
+export function EditModal({ item, sourceUrl, onClose, onSave }: EditModalProps) {
+  const [useColor, setUseColor] = useState(true);
+  const [bgColor, setBgColor] = useState("#FFFFFF");
+  const [bgImage, setBgImage] = useState<File | null>(null);
+  const [effect, setEffect] = useState<EffectId>("none");
+  const [amount, setAmount] = useState(50);
+  const [exportUrl, setExportUrl] = useState("");
+  const [ready, setReady] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (image.processedFile) {
-      applyChanges();
-    }
-  }, [bgType, bgColor, customBgImage, selectedEffect, blurValue, brightnessValue, contrastValue]);
+    closeRef.current?.focus();
+  }, []);
 
-  const getCurrentEffectValue = () => {
-    switch (selectedEffect) {
-      case 'blur':
-        return blurValue;
-      case 'brightness':
-        return brightnessValue;
-      case 'contrast':
-        return contrastValue;
-      default:
-        return 50;
-    }
-  };
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
 
-  const handleEffectValueChange = (value: number) => {
-    switch (selectedEffect) {
-      case 'blur':
-        setBlurValue(value);
-        break;
-      case 'brightness':
-        setBrightnessValue(value);
-        break;
-      case 'contrast':
-        setContrastValue(value);
-        break;
-    }
-  };
+  useEffect(() => {
+    if (!sourceUrl) return;
+    const url = sourceUrl;
+    let cancelled = false;
+    setReady(false);
 
-  const applyChanges = async () => {
-    if (!image.processedFile) return;
-    
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
-    const img = new Image();
-    img.src = processedURL;
-    await new Promise(resolve => img.onload = resolve);
-    
-    canvas.width = img.width;
-    canvas.height = img.height;
-    
-    // Apply background
-    if (bgType === 'color') {
-      ctx.fillStyle = bgColor;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    } else if (bgType === 'image' && customBgImage) {
-      const bgImg = new Image();
-      bgImg.src = URL.createObjectURL(customBgImage);
-      await new Promise(resolve => bgImg.onload = resolve);
-      ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
-    }
-    
-    // Draw the processed image
-    ctx.drawImage(img, 0, 0);
-    
-    // Apply effects
-    if (selectedEffect !== 'none') {
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-      
-      switch (selectedEffect) {
-        case 'blur':
-          // Create a temporary canvas for blur effect
-          const tempCanvas = document.createElement('canvas');
-          const tempCtx = tempCanvas.getContext('2d');
-          if (!tempCtx) break;
-          
-          tempCanvas.width = canvas.width;
-          tempCanvas.height = canvas.height;
-          
-          // Draw current state to temp canvas
-          tempCtx.drawImage(canvas, 0, 0);
-          
-          // Clear main canvas
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          
-          // Apply blur using CSS filter
-          ctx.filter = `blur(${blurValue / 10}px)`;
-          ctx.drawImage(tempCanvas, 0, 0);
-          ctx.filter = 'none';
-          break;
-          
-        case 'brightness':
-          for (let i = 0; i < data.length; i += 4) {
-            data[i] = Math.min(255, data[i] * (brightnessValue / 50));
-            data[i + 1] = Math.min(255, data[i + 1] * (brightnessValue / 50));
-            data[i + 2] = Math.min(255, data[i + 2] * (brightnessValue / 50));
-          }
-          ctx.putImageData(imageData, 0, 0);
-          break;
-          
-        case 'contrast':
-          const factor = (259 * (contrastValue + 255)) / (255 * (259 - contrastValue));
-          for (let i = 0; i < data.length; i += 4) {
+    // Composing writes a full-size PNG data URL, so it lives in one effect rather than a
+    // callback: the dependency list below *is* the set of things that can change the result.
+    async function compose() {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      const img = new Image();
+      img.src = url;
+      try {
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error("Could not decode the cut-out"));
+        });
+      } catch {
+        return;
+      }
+
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+
+      if (useColor) {
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      } else if (bgImage) {
+        const layerUrl = URL.createObjectURL(bgImage);
+        const layer = new Image();
+        layer.src = layerUrl;
+        try {
+          await new Promise((resolve, reject) => {
+            layer.onload = resolve;
+            layer.onerror = () => reject(new Error("Could not decode the background image"));
+          });
+          ctx.drawImage(layer, 0, 0, canvas.width, canvas.height);
+        } catch {
+          /* Fall back to transparency rather than blocking the composite. */
+        } finally {
+          URL.revokeObjectURL(layerUrl);
+        }
+      }
+
+      ctx.drawImage(img, 0, 0);
+
+      if (effect === "blur") {
+        const temp = document.createElement("canvas");
+        const tempCtx = temp.getContext("2d");
+        if (!tempCtx) return;
+        temp.width = canvas.width;
+        temp.height = canvas.height;
+        tempCtx.drawImage(canvas, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.filter = `blur(${amount / 10}px)`;
+        ctx.drawImage(temp, 0, 0);
+        ctx.filter = "none";
+      } else if (effect !== "none") {
+        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = frame.data;
+        const scale = amount / 50;
+        const factor = (259 * (amount + 255)) / (255 * (259 - amount));
+        for (let i = 0; i < data.length; i += 4) {
+          if (effect === "brightness") {
+            data[i] = Math.min(255, data[i] * scale);
+            data[i + 1] = Math.min(255, data[i + 1] * scale);
+            data[i + 2] = Math.min(255, data[i + 2] * scale);
+          } else {
             data[i] = factor * (data[i] - 128) + 128;
             data[i + 1] = factor * (data[i + 1] - 128) + 128;
             data[i + 2] = factor * (data[i + 2] - 128) + 128;
           }
-          ctx.putImageData(imageData, 0, 0);
-          break;
+        }
+        ctx.putImageData(frame, 0, 0);
       }
+
+      if (cancelled) return;
+      setExportUrl(canvas.toDataURL("image/png"));
+      setReady(true);
     }
-    
-    const dataUrl = canvas.toDataURL('image/png');
-    setExportUrl(dataUrl);
-  };
 
-  const handleSave = () => {
-    onSave(exportUrl);
-    onClose();
-  };
-
-  if (!isOpen) return null;
+    void compose();
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceUrl, useColor, bgColor, bgImage, effect, amount]);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-800">Edit Image</h2>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Composite a background for ${item.file.name}`}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/80 p-4 backdrop-blur-sm"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-ink-800 shadow-raised">
+        <header className="flex items-center justify-between gap-4 border-b border-line px-5 py-4">
+          <div>
+            <h2 className="font-display text-xl">Composite a background</h2>
+            <p className="readout mt-1 truncate text-xs text-mute">{item.file.name}</p>
+          </div>
           <button
+            ref={closeRef}
+            type="button"
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700"
+            aria-label="Close editor"
+            className="btn-ghost px-2 py-1"
           >
-            ✕
+            <IconClose className="h-4 w-4" />
           </button>
-        </div>
+        </header>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-4">
+        <div className="grid gap-6 p-5 md:grid-cols-2">
+          <div className="space-y-6">
             <div>
-              <h3 className="font-medium text-gray-700 mb-2">Background</h3>
-              <div className="flex gap-2 mb-4">
-                {backgroundOptions.map(option => (
-                  <button
-                    key={option.id}
-                    onClick={() => setBgType(option.id)}
-                    className={`px-3 py-1 rounded ${
-                      bgType === option.id
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
+              <p className="label mb-2">Background</p>
+              <div className="mb-3 grid grid-cols-2 gap-2">
+                <ToggleButton active={useColor} onClick={() => setUseColor(true)}>
+                  Solid
+                </ToggleButton>
+                <ToggleButton active={!useColor} onClick={() => setUseColor(false)}>
+                  Image
+                </ToggleButton>
               </div>
 
-              {bgType === 'color' && (
-                <div>
-                  <div className="flex gap-2 mb-2">
-                    {predefinedColors.map(color => (
+              {useColor ? (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    {BACKGROUND_COLORS.map((color) => (
                       <button
                         key={color}
+                        type="button"
                         onClick={() => setBgColor(color)}
-                        className="w-8 h-8 rounded-full border border-gray-300"
+                        aria-label={`Use ${color}`}
+                        className={`h-8 w-8 rounded-sm transition-shadow ${
+                          bgColor === color
+                            ? "ring-2 ring-lime ring-offset-2 ring-offset-ink-800"
+                            : "ring-1 ring-line hover:ring-mute"
+                        }`}
                         style={{ backgroundColor: color }}
                       />
                     ))}
                   </div>
-                  <div className="flex items-center gap-2 mt-3">
-                    <button
-                      onClick={() => setShowCustomColorPicker(!showCustomColorPicker)}
-                      className="px-3 py-1.5 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors text-sm text-gray-700"
-                    >
-                      Custom Color
-                    </button>
-                    {showCustomColorPicker && (
-                      <input
-                        type="color"
-                        value={bgColor}
-                        onChange={(e) => setBgColor(e.target.value)}
-                        className="w-8 h-8 border border-gray-400 rounded-md hover:bg-blue-200"
-                      />
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {bgType === 'image' && (
+                  <label className="readout mt-4 flex items-center gap-2 text-xs text-mute">
+                    Custom
+                    <input
+                      type="color"
+                      value={bgColor}
+                      onChange={(event) => setBgColor(event.target.value)}
+                      aria-label="Custom background colour"
+                      className="h-8 w-12"
+                    />
+                    <span className="text-paper">{bgColor.toUpperCase()}</span>
+                  </label>
+                </>
+              ) : (
                 <input
                   type="file"
-                  accept="image/*"
-                  onChange={(e) => setCustomBgImage(e.target.files?.[0] || null)}
-                  className="w-full"
+                  accept="image/png,image/jpeg,image/webp"
+                  aria-label="Background image"
+                  onChange={(event) => setBgImage(event.target.files?.[0] ?? null)}
+                  className="readout w-full text-xs text-mute file:mr-3 file:rounded-sm file:bg-ink-700 file:px-3 file:py-1.5 file:text-paper file:ring-1 file:ring-line"
                 />
               )}
             </div>
 
             <div>
-              <h3 className="font-medium text-gray-700 mb-2">Effects</h3>
-              <div className="flex gap-2 mb-4">
-                {effectOptions.map(option => (
-                  <button
+              <p className="label mb-2">Effect</p>
+              <div className="grid grid-cols-4 gap-2">
+                {EFFECTS.map((option) => (
+                  <ToggleButton
                     key={option.id}
-                    onClick={() => setSelectedEffect(option.id)}
-                    className={`px-3 py-1 rounded ${
-                      selectedEffect === option.id
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
+                    active={effect === option.id}
+                    onClick={() => setEffect(option.id)}
                   >
                     {option.label}
-                  </button>
+                  </ToggleButton>
                 ))}
               </div>
-
-              {selectedEffect !== 'none' && (
-                <div>
+              {effect !== "none" && (
+                <div className="mt-4">
                   <input
                     type="range"
-                    min="0"
-                    max="100"
-                    value={getCurrentEffectValue()}
-                    onChange={(e) => handleEffectValueChange(Number(e.target.value))}
-                    className="w-full"
+                    min={0}
+                    max={100}
+                    value={amount}
+                    onChange={(event) => setAmount(Number(event.target.value))}
+                    className="slider w-full"
+                    aria-label={`Effect strength for ${effect}`}
                   />
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span>0</span>
-                    <span>{getCurrentEffectValue()}</span>
-                    <span>100</span>
+                  <div className="readout mt-2 flex justify-between text-xs text-mute">
+                    <span>soft</span>
+                    <span className="text-paper">{amount}</span>
+                    <span>strong</span>
                   </div>
                 </div>
               )}
             </div>
+
+            <p className="text-xs leading-relaxed text-mute">
+              Effects apply to the whole composite, so the subject is affected too. Leave the
+              effect on <span className="text-paper">None</span> to only change the background.
+            </p>
           </div>
 
           <div>
-            <h3 className="font-medium text-gray-700 mb-2">Preview</h3>
-            <div className="border rounded-lg overflow-hidden">
+            <p className="label mb-2">Preview</p>
+            <div className="checker overflow-hidden rounded-md ring-1 ring-line">
               <img
-                src={exportUrl || processedURL}
-                alt="Preview"
-                className="w-full object-contain"
+                src={exportUrl || sourceUrl || undefined}
+                alt={`Composite preview of ${item.file.name}`}
+                className="max-h-[22rem] w-full object-contain"
               />
             </div>
+            <p className="readout mt-2 text-xs text-mute">
+              {exportUrl
+                ? `${(exportUrl.length / 1024 / 1.37).toFixed(1)} MiB PNG`
+                : "Rendering…"}
+            </p>
           </div>
         </div>
 
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
-          >
+        <footer className="flex flex-wrap justify-end gap-2 border-t border-line px-5 py-4">
+          <button type="button" onClick={onClose} className="btn-ghost">
             Cancel
           </button>
+          {ready && (
+            <a
+              href={exportUrl}
+              download={`${item.file.name.replace(/\.[^.]+$/, "")}-background.png`}
+              className="btn-ghost"
+            >
+              <IconDownload className="h-4 w-4" />
+              Download
+            </a>
+          )}
           <button
-            onClick={handleSave}
-            className="px-4 py-2 text-white bg-blue-500 rounded hover:bg-blue-600"
+            type="button"
+            disabled={!ready}
+            onClick={() => {
+              onSave(exportUrl);
+              onClose();
+            }}
+            className="btn-primary"
           >
-            Save Changes
+            Apply
           </button>
-        </div>
+        </footer>
       </div>
     </div>
+  );
+}
+
+function ToggleButton({
+  active,
+  onClick,
+  children
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`rounded-sm px-2.5 py-1.5 font-mono text-xs transition-colors ${
+        active
+          ? "bg-ink-700 text-lime ring-1 ring-lime/40"
+          : "bg-ink-900 text-mute ring-1 ring-line hover:text-paper"
+      }`}
+    >
+      {children}
+    </button>
   );
 }

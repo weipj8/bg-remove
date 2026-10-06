@@ -4,12 +4,13 @@ A powerful React + Vite application that removes backgrounds from images directl
 
 ## Features
 
-- 🎯 One-click background removal for images
-- 🎨 Custom background color and image selection
-- 💾 Download options for both transparent and colored backgrounds
-- 🏃‍♂️ Local processing - no server uploads needed
-- 🔒 Privacy-focused - all processing happens in your browser
-- ⚡ Optional WebGPU acceleration for supported browsers
+- One-click background removal for images, in bulk
+- Transparent PNG export, plus a compositor for a solid colour or your own background
+- Honest first-run expectations: the download is disclosed before you drop a file, then
+  tracked in MB, KB/s and an estimate — not a spinner
+- A "model cached" state on every visit after that one, and it really is offline afterwards
+- Optional WebGPU acceleration for supported browsers
+- No account, no watermark, no upload, and zero third-party requests at runtime
 
 ## Technical Implementation
 
@@ -29,29 +30,32 @@ Both implementations use Transformers.js to run the machine learning models dire
 
 ## How It Works
 
-1. **File Selection**: Upload any image file
-2. **Model Selection**: 
-   - By default, uses RMBG-1.4 for maximum compatibility
-   - If WebGPU is available, offers option to switch to MODNet
-3. **Background Removal**: The selected ML model processes your media, creating an alpha mask
-4. **Customization**: Choose a custom background color, image or keep transparency
-5. **Export**: Download your processed media with either transparent or colored background
+1. **Drop, paste or pick** — a file, a screenshot from the clipboard, or one of the four
+   bundled samples
+2. **Model selection** — RMBG-1.4 by default for maximum compatibility; MODNet appears when
+   the browser reports WebGPU
+3. **One-time setup** — the first run downloads the weight into the browser cache, then
+   onnxruntime-web compiles it for this device. Every later visit skips both steps.
+4. **Inference** — the model produces an alpha matte and the image is re-encoded as a
+   transparent PNG, entirely in the tab
+5. **Optional compositing** — flatten onto a colour or your own background image
+6. **Export** — download per image; nothing was ever sent anywhere
 
 ## Getting Started
 
-1. Clone the repository:
-```bash
-git clone https://github.com/weipj8/bg-remove.git
-```
-
-2. Install dependencies:
 ```bash
 npm install
+npm run dev          # Vite on :5173; models served from public/models/
 ```
 
-3. Start the development server:
+The model weights are committed, so a fresh clone needs no download step. Other scripts:
+
 ```bash
-npm run dev
+npm run typecheck    # tsc --noEmit
+npm run lint
+npm run build        # manifest -> vite build -> prerender dist/index.html
+npm run pages:dev    # build, then serve through wrangler (COOP/COEP + Functions)
+npm run fonts        # re-vendor public/fonts + src/fonts.css from @fontsource
 ```
 
 ## Deployment
@@ -83,12 +87,14 @@ be blocked.
 
 ## Technical Stack
 
-- React + Vite for the frontend framework
-- Transformers.js for ML model inference
-- RMBG-1.4 as the default cross-browser model
-- Optional WebGPU acceleration with MODNet
-- IndexedDB (via Dexie.js) for local file management
-- TailwindCSS for styling
+- React 18 + Vite + Tailwind, deployed as static files on Cloudflare Pages
+- Transformers.js + onnxruntime-web for in-browser inference (JSEP WASM bundle vendored)
+- RMBG-1.4 as the default cross-browser model, MODNet when WebGPU is available
+- Self-hosted woff2 fonts (Instrument Serif / Spline Sans / Spline Sans Mono)
+- `dist/index.html` is prerendered at build time so crawlers see prose, then the client
+  renders the tool over it
+- No database, no queue, no server-side code beyond the one Function that streams the
+  oversized model out of R2
 
 ## Credits
 

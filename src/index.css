@@ -1,77 +1,107 @@
+/* latin subset only, vendored out of the @fontsource devDependencies by
+   scripts/vendor-fonts.mjs. COEP `require-corp` (functions/_middleware.js) rejects a
+   remote font, so nothing here may point off-origin; the OFL licenses are in public/fonts/. */
+@import "./fonts.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-.bg-checkered {
-  background-image: linear-gradient(45deg, #808080 25%, transparent 25%),
-    linear-gradient(-45deg, #808080 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #808080 75%),
-    linear-gradient(-45deg, transparent 75%, #808080 75%);
-  background-size: 20px 20px;
-  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
-  background-color: #fff;
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    background-color: #080a0c;
+  }
+
+  body {
+    @apply bg-ink-950 text-paper font-sans antialiased;
+    /* Fine grain over the graphite, so large dark panels do not band into flat black. */
+    background-image: radial-gradient(
+        120% 80% at 50% 0%,
+        rgba(30, 38, 46, 0.55) 0%,
+        rgba(8, 10, 12, 0) 60%
+      ),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.18'/%3E%3C/svg%3E");
+    background-attachment: fixed, fixed;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-lime ring-offset-2 ring-offset-ink-950;
+  }
+
+  ::selection {
+    background: #c4f135;
+    color: #080a0c;
+  }
 }
 
-.mask {
-  mask-image: linear-gradient(to right, black 0%, black 100%);
-  mask-size: 100%;
-  mask-repeat: no-repeat;
-  transition: mask-size 0.2s;
-  transition-delay: 0.7s;
+@layer components {
+  /* Alpha preview. One pattern for every transparent surface so the checkerboard
+     reads as part of the identity rather than a per-widget hack. */
+  .checker {
+    background-image: repeating-conic-gradient(
+      #1b2229 0% 25%,
+      #12171c 0% 50%
+    );
+    background-size: 16px 16px;
+  }
+
+  .label {
+    @apply font-mono text-xs uppercase tracking-label text-mute;
+  }
+
+  .readout {
+    @apply font-mono text-sm tabular-nums;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-md bg-lime px-4 py-2 font-mono text-sm font-medium uppercase tracking-wide text-ink-950 transition-colors hover:bg-lime-dim disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-md bg-ink-700 px-4 py-2 font-mono text-sm text-paper ring-1 ring-line transition-colors hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40;
+  }
 }
 
-.mask:hover {
-  mask-size: 0%;
-  transition-delay: 0s;
-}
-
-.mask.processing {
-  mask-size: 0%;
-  transition-delay: 0s;
-  border: 2px solid red;
-}
-
-body {
-  background: linear-gradient(135deg, #5200ae, #4062bb);
-}
-
-/* Slider styles */
-input[type="range"] {
+/* Opt-in `.slider`, never a bare `input[type="range"]` rule: an element selector
+   outranks Tailwind's `h-full`, which would flatten the full-area wipe handle in the
+   before/after comparison into a 4 px strip nobody can grab. */
+.slider {
   -webkit-appearance: none;
   appearance: none;
-  background: #808080;
+  background: #2a343e;
   height: 4px;
   border-radius: 2px;
 }
 
-input[type="range"]::-webkit-slider-thumb {
+.slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 16px;
   height: 16px;
-  background: white;
+  background: #c4f135;
   border-radius: 50%;
   cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
-input[type="range"]::-moz-range-thumb {
+.slider::-moz-range-thumb {
   width: 16px;
   height: 16px;
-  background: white;
+  background: #c4f135;
   border-radius: 50%;
   cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   border: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
 /* Color picker styles */
 input[type="color"] {
   -webkit-appearance: none;
-  /* border: none; */
   padding: 0;
-  border-radius: 4px;
+  border-radius: 6px;
   overflow: hidden;
+  background: transparent;
 }
 
 input[type="color"]::-webkit-color-swatch-wrapper {
@@ -82,9 +112,62 @@ input[type="color"]::-webkit-color-swatch {
   border: none;
 }
 
-/* Image container styles */
-.grid img {
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sheen {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(400%);
+  }
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-60%) scaleX(0.4);
+  }
+  50% {
+    transform: translateX(0%) scaleX(1);
+  }
+  100% {
+    transform: translateX(120%) scaleX(0.4);
+  }
+}
+
+.rise {
+  animation: rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Scoped on purpose: the previous rule was `.grid img`, which hijacked the size and
+   crop of every image in any grid on the page. */
+.thumb-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .rise {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
